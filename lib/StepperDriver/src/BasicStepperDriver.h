@@ -12,7 +12,9 @@
 
 #include "driver/gpio.h"
 #include "esp_timer.h"
+#include "rom/ets_sys.h"
 #include "freertos/FreeRTOS.h"
+#include <cmath>
 
 // used internally by the library to mark unconnected pins
 #define PIN_UNCONNECTED -1

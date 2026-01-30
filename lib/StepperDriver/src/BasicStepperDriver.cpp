@@ -56,14 +56,14 @@ BasicStepperDriver::BasicStepperDriver(short steps, short dir_pin, short step_pi
  * Initialize pins, calculate timings etc
  */
 void BasicStepperDriver::begin(float rpm, short microsteps){
-    gpio_set_direction(dir_pin, GPIO_MODE_OUTPUT);  // Replace pinMode(dir_pin, OUTPUT)
-    gpio_set_level(dir_pin, 1);  // Replace digitalWrite(dir_pin, HIGH)
+    gpio_set_direction((gpio_num_t)dir_pin, GPIO_MODE_OUTPUT);  // Replace pinMode(dir_pin, OUTPUT)
+    gpio_set_level((gpio_num_t)dir_pin, 1);  // Replace digitalWrite(dir_pin, HIGH)
 
-    gpio_set_direction(step_pin, GPIO_MODE_OUTPUT);  // Replace pinMode(step_pin, OUTPUT)
-    gpio_set_level(step_pin, 0);  // Replace digitalWrite(step_pin, LOW)
+    gpio_set_direction((gpio_num_t)step_pin, GPIO_MODE_OUTPUT);  // Replace pinMode(step_pin, OUTPUT)
+    gpio_set_level((gpio_num_t)step_pin, 0);  // Replace digitalWrite(step_pin, LOW)
 
     if IS_CONNECTED(enable_pin){
-        gpio_set_direction(enable_pin, GPIO_MODE_OUTPUT);  // Replace pinMode(enable_pin, OUTPUT)
+        gpio_set_direction((gpio_num_t)enable_pin, GPIO_MODE_OUTPUT);  // Replace pinMode(enable_pin, OUTPUT)
         disable();
     }
 
@@ -321,16 +321,16 @@ long BasicStepperDriver::nextAction(void){
         /*
          * DIR pin is sampled on rising STEP edge, so it is set first
          */
-        digitalWrite(dir_pin, dir_state);
-        digitalWrite(step_pin, HIGH);
-        unsigned m = micros();
+        gpio_set_level((gpio_num_t)dir_pin, dir_state);
+        gpio_set_level((gpio_num_t)step_pin, 1);
+        unsigned m = (unsigned long)esp_timer_get_time();
         unsigned long pulse = step_pulse; // save value because calcStepPulse() will overwrite it
         calcStepPulse();
         // We should pull HIGH for at least 1-2us (step_high_min)
         delayMicros(step_high_min);
-        digitalWrite(step_pin, LOW);
+        gpio_set_level((gpio_num_t)step_pin, 0);
         // account for calcStepPulse() execution time; sets ceiling for max rpm on slower MCUs
-        last_action_end = micros();
+        last_action_end = (unsigned long)esp_timer_get_time();
         m = last_action_end - m;
         next_action_interval = (pulse > m) ? pulse - m : 1;
     } else {
@@ -368,14 +368,14 @@ void BasicStepperDriver::setEnableActiveState(short state){
  */
 void BasicStepperDriver::enable(void){
     if IS_CONNECTED(enable_pin){
-        digitalWrite(enable_pin, enable_active_state);
+        gpio_set_level((gpio_num_t)enable_pin, enable_active_state);
     };
     delayMicros(2);
 }
 
 void BasicStepperDriver::disable(void){
     if IS_CONNECTED(enable_pin){
-        digitalWrite(enable_pin, (enable_active_state == HIGH) ? LOW : HIGH);
+        gpio_set_level((gpio_num_t)enable_pin, (enable_active_state == HIGH) ? LOW : HIGH);
     }
 }
 

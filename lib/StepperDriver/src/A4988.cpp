@@ -48,9 +48,9 @@ void A4988::begin(float rpm, short microsteps){
         return;
     }
 
-    pinMode(ms1_pin, OUTPUT);
-    pinMode(ms2_pin, OUTPUT);
-    pinMode(ms3_pin, OUTPUT);
+    gpio_set_direction((gpio_num_t)ms1_pin, GPIO_MODE_OUTPUT);
+    gpio_set_direction((gpio_num_t)ms2_pin, GPIO_MODE_OUTPUT);
+    gpio_set_direction((gpio_num_t)ms3_pin, GPIO_MODE_OUTPUT);
 }
 
 /*
@@ -72,9 +72,9 @@ short A4988::setMicrostep(short microsteps){
     while (i < ms_table_size){
         if (this->microsteps & (1<<i)){
             uint8_t mask = ms_table[i];
-            digitalWrite(ms3_pin, mask & 4);
-            digitalWrite(ms2_pin, mask & 2);
-            digitalWrite(ms1_pin, mask & 1);
+            gpio_set_level((gpio_num_t)ms3_pin, mask & 4);
+            gpio_set_level((gpio_num_t)ms2_pin, mask & 2);
+            gpio_set_level((gpio_num_t)ms1_pin, mask & 1);
             break;
         }
         i++;
