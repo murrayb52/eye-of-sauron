@@ -67,7 +67,7 @@ void motorSetup(void) {
 
 void motorOperate(void) {
     for (int step = 0; step < STEPS_PER_REVOLUTION; step++) {
-        ESP_LOGI(TAG, "Stepping... %d/%d", step + 1, STEPS_PER_REVOLUTION);
-        step_motor(10);
+        //ESP_LOGI(TAG, "Stepping... %d/%d", step + 1, STEPS_PER_REVOLUTION);
+        step_motor(1000);
     }
 }
