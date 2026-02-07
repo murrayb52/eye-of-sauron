@@ -22,10 +22,10 @@ bool current_dir = 0; // Initial direction (0 or 1)
 static const char *TAG = "MotorControl";
 
 static void step_motor(int delay_us) {
-    gpio_set_level(PIN_STEP, 1);
-    esp_rom_delay_us(2);
+    gpio_set_level(PIN_STEP, 1);    // motor will always step on rising edge
+    esp_rom_delay_us(2);            // minimum pulse width for A4988 is 1 microsecond, so 2us is safe
     gpio_set_level(PIN_STEP, 0);
-    esp_rom_delay_us(delay_us);
+    esp_rom_delay_us(delay_us);     // delay between steps controls speed
 }
 
 static void toggle_direction(void) {
@@ -66,8 +66,18 @@ void motorSetup(void) {
 }
 
 void motorOperate(void) {
-    for (int step = 0; step < STEPS_PER_REVOLUTION; step++) {
-        //ESP_LOGI(TAG, "Stepping... %d/%d", step + 1, STEPS_PER_REVOLUTION);
+    int init_ramp = 20;
+    int step;
+    ESP_LOGI(TAG, "Ramp...");
+    for (step = 0; step < init_ramp; step++) {
         step_motor(1000);
+    }
+    ESP_LOGI(TAG, "Spinning...");
+    for (step = step; step < 2*init_ramp; step++) {
+        step_motor(800);
+    }
+    ESP_LOGI(TAG, "MAX SPEED...");
+    for (step = step; step < STEPS_PER_REVOLUTION; step++) {
+        step_motor(500);
     }
 }
