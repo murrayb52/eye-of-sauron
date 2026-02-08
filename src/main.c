@@ -16,7 +16,6 @@ void app_main(void)
     
     // Main loop: spin 1 revolution every 2 seconds
     while (1) {
-        servoTest(); // Test servo control
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        motorOperate();
     }
 }

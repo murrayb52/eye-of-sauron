@@ -17,7 +17,7 @@
 #define TARGET_DELAY_US 100      // Target speed (100us between steps)
 #define ACCEL_STEPS 50           // Number of steps to ramp up/down
 
-bool current_dir = 0; // Initial direction (0 or 1)
+static bool current_dir = 0; // Initial direction (0 or 1)
 
 static const char *TAG = "MotorControl";
 
@@ -30,17 +30,46 @@ static void step_motor(int delay_us) {
 
 static void toggle_direction(void) {
     current_dir = !current_dir;
+    ESP_LOGI(TAG, "Change dir: %d", current_dir);
     gpio_set_level(PIN_DIR, current_dir);
 }
 
-static void rotate_revolutions(float revolutions) {
+static void rotate_revolutions(float revolutions, int speed) {
     // Spin one revolution slowly
+    ESP_LOGI(TAG, "rotate %f revs at speed %d", revolutions, speed);
+
+    // convert speed
+    int inter_pulse_time_us = 1000;
+    if (speed <= 1) {
+        inter_pulse_time_us = 5000;
+
+    }
+    else if (speed <= 2) {
+        inter_pulse_time_us = 4000;
+    }
+    else {
+        inter_pulse_time_us = 3000;
+    }
+
+    // do rotations
+    int total_steps = revolutions * STEPS_PER_REVOLUTION;
+    for (int step = 0; step <= total_steps; step++ ) {
+        step_motor(inter_pulse_time_us);
+        
+        // Yield to other tasks every 100 steps to prevent watchdog timeout
+        if (step % 100 == 0) {
+            vTaskDelay(1);  // Delay 1 tick (~10ms) to let IDLE task run
+        }
+    }
+
+    /*
     for (int x = 0; x < STEPS_PER_REVOLUTION * revolutions; x++) {
         gpio_set_level(PIN_STEP, 1);
-        vTaskDelay(pdMS_TO_TICKS(5)); // Speed control
+        esp_rom_delay_us(5); // Speed control
         gpio_set_level(PIN_STEP, 0);
-        vTaskDelay(pdMS_TO_TICKS(5)); // Speed control
+        esp_rom_delay_us(5); // Speed control
     }
+    */
 }
 
 void motorSetup(void) {
@@ -66,18 +95,18 @@ void motorSetup(void) {
 }
 
 void motorOperate(void) {
-    int init_ramp = 20;
-    int step;
-    ESP_LOGI(TAG, "Ramp...");
-    for (step = 0; step < init_ramp; step++) {
-        step_motor(1000);
-    }
-    ESP_LOGI(TAG, "Spinning...");
-    for (step = step; step < 2*init_ramp; step++) {
-        step_motor(800);
-    }
-    ESP_LOGI(TAG, "MAX SPEED...");
-    for (step = step; step < STEPS_PER_REVOLUTION; step++) {
-        step_motor(500);
-    }
+    rotate_revolutions(1.0, 1);
+
+    toggle_direction();
+    esp_rom_delay_us(1000000);
+
+    rotate_revolutions(0.5, 2);
+    
+    esp_rom_delay_us(1000000);
+    toggle_direction();
+
+    rotate_revolutions(0.75, 3);
+    
+    esp_rom_delay_us(1000000);
+    toggle_direction();
 }
