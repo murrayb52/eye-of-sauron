@@ -2,6 +2,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "motorControl.h"
+#include "servoControl.h"
 
 static const char *TAG = "Main";
 
@@ -15,7 +16,7 @@ void app_main(void)
     
     // Main loop: spin 1 revolution every 2 seconds
     while (1) {
-        motorOperate();
+        servoTest(); // Test servo control
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
