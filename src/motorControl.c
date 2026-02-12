@@ -96,6 +96,7 @@ void motorSetup(void) {
 
 void motorOperate(void) {
     rotate_revolutions(1.0, 1);
+    rotate_revolutions(0.5, 2);
 
     toggle_direction();
     esp_rom_delay_us(1000000);
