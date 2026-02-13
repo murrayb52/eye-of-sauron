@@ -5,4 +5,4 @@ FILE(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/src/*.*)
 
 idf_component_register(SRCS "main.c" "motorControl.c"
                       INCLUDE_DIRS "."
-                      REQUIRES driver log)
+                      REQUIRES driver log servo)

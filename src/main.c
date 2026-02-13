@@ -4,7 +4,7 @@
 #include "motorControl.h"
 #include "servoControl.h"
 
-static const char *TAG = "Main";
+//static const char *TAG = "Main";
 
 void app_main(void)
 {

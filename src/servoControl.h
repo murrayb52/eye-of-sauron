@@ -3,9 +3,8 @@
 
 #include "servoControl.c"
 
-void servo_init();
-void jump_to_angle(int angle);
-void servo_cleanup();
+void servoInit();
+void servoCleanup();
 int servoTest();
 
 #endif
