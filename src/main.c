@@ -1,27 +1,44 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
-#include "motorControl.h"
-#include "servoControl.h"
 
-//static const char *TAG = "Main";
+// -------------------------------------------------------------------------------
+// Includes
 
+#include "taskMan.h"
+#include "gimbalControlSvc.h"
+#include "commsSvc.h"
+
+// -------------------------------------------------------------------------------
+// Definitions
+#define CORE0               0       /**< CPU core 0 identifier for pinned tasks */
+// only define CORE1 as 1 if multiple cores exist, otherwise use tskNO_AFFINITY
+#define CORE1       ((CONFIG_FREERTOS_NUMBER_OF_CORES > 1) ? 1 : tskNO_AFFINITY) /**< CPU core 1 or tskNO_AFFINITY */
+#define TASK_PRIO_3         3       /**< Higher task priority used for main services */
+#define TASK_PRIO_2         2       /**< Secondary task priority */
+
+// -------------------------------------------------------------------------------
+// Type defines
+
+// -------------------------------------------------------------------------------
+// Local variables
+
+// -------------------------------------------------------------------------------
+// Local function declarations
+
+// -------------------------------------------------------------------------------
+// Global function definitions
+// -------------------------------------------------------------------------------
+/**
+ * @brief Application entry point called by the ESP-IDF runtime.
+ *
+ * This function initializes services and creates the main FreeRTOS
+ * tasks for storage, AP management and auxiliary workloads.
+ */
 void app_main(void)
 {
-    /*
-    vTaskDelay(pdMS_TO_TICKS(5000));
-    ESP_LOGI(TAG, "Starting motor control application...");
-    
-    // Initialize motor
-    motorSetup();
-    
-    // Main loop: spin 1 revolution every 2 seconds
-    while (1) {
-        motorOperate();
-    }
-        */
-    while(1) {
-        servoTest();
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
+    gimbalControlSvc_init();
+
+    xTaskCreatePinnedToCore(gimbalControlSvc_mainTask,  "gimbalControlSvc", 4096, (void*)TASK_ID_GIMBAL_CONTROL,    TASK_PRIO_3, NULL, tskNO_AFFINITY);
+    xTaskCreatePinnedToCore(commsSvc_mainTask,          "commsSvc",         8192, (void*)TASK_ID_COMMS,             TASK_PRIO_3, NULL, tskNO_AFFINITY);
+    //xTaskCreatePinnedToCore(accelSvc_mainTask,          "accelSvc",         4096, (void*)TASK_ID_ACCEL,             TASK_PRIO_3, NULL, tskNO_AFFINITY);
 }
