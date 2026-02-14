@@ -92,9 +92,9 @@ bool joystick_getInputAttitude(gimbalAttitude_t *attitude)
         return false;
     }
 
-    attitude->tiltDeg = joystickMapAxis((float)joystickSample.xRaw, ADC_MIN_READING, X_RAW_MID, ADC_MAX_READING, JOYSTICK_TILT_MAX, JOYSTICK_TILT_MIN);
+    attitude->tiltDeg = -joystickMapAxis((float)joystickSample.xRaw, ADC_MIN_READING, X_RAW_MID, ADC_MAX_READING, JOYSTICK_TILT_MAX, JOYSTICK_TILT_MIN);
     attitude->panDeg = -joystickMapAxis((float)joystickSample.yRaw, ADC_MIN_READING, Y_RAW_MID, ADC_MAX_READING, JOYSTICK_PAN_MIN, JOYSTICK_PAN_MAX);
-    ESP_LOGI(TAG, "Joystick attitude - pan: %.1f, tilt: %.1f", attitude->panDeg, attitude->tiltDeg);
+    //ESP_LOGI(TAG, "Joystick attitude - pan: %.1f, tilt: %.1f", attitude->panDeg, attitude->tiltDeg);
     
     return true;
 }
