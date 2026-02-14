@@ -7,6 +7,7 @@
  */
 typedef enum {
     TASK_ID_GIMBAL_CONTROL = 0, /** NVS storage service task */
+    TASK_ID_STEPPER_CONTROL,    /** Gimbal control service task */
     TASK_ID_COMMS,              /** AP manager service task */
     TASK_ID_ACCEL,              /** Miscellaneous or unassigned task */
     TASK_ID_MAX                 /** Sentinel value for number of task IDs */

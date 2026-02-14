@@ -7,6 +7,7 @@
 #include "taskMan.h"
 #include "gimbalControlSvc.h"
 #include "commsSvc.h"
+#include "stepperControl.h"
 
 // -------------------------------------------------------------------------------
 // Definitions
@@ -37,8 +38,12 @@
 void app_main(void)
 {
     gimbalControlSvc_init();
+    stepperControl_init();
 
-    xTaskCreatePinnedToCore(gimbalControlSvc_mainTask,  "gimbalControlSvc", 4096, (void*)TASK_ID_GIMBAL_CONTROL,    TASK_PRIO_3, NULL, tskNO_AFFINITY);
+    vTaskDelay(5000 / portTICK_PERIOD_MS); // Delay to allow gimbal control to initialize before starting comms
+    
+    xTaskCreatePinnedToCore(gimbalControlSvc_mainTask,  "gimbalControlSvc", 4096, (void*)TASK_ID_GIMBAL_CONTROL,    TASK_PRIO_3, NULL, CORE0);
+    xTaskCreatePinnedToCore(stepperControl_mainTask,    "stepperControl",   4096, (void*)TASK_ID_STEPPER_CONTROL,   TASK_PRIO_3, NULL, CORE1);
     xTaskCreatePinnedToCore(commsSvc_mainTask,          "commsSvc",         8192, (void*)TASK_ID_COMMS,             TASK_PRIO_3, NULL, tskNO_AFFINITY);
     //xTaskCreatePinnedToCore(accelSvc_mainTask,          "accelSvc",         4096, (void*)TASK_ID_ACCEL,             TASK_PRIO_3, NULL, tskNO_AFFINITY);
 }
