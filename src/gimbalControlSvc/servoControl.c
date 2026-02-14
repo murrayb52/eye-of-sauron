@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "iot_servo.h"
+#include "driver/gpio.h"
 
 #define SERVO_CH0_PIN 22           // GPIO pin for servo control
 
@@ -12,7 +13,7 @@
 #define LEDC_MODE LEDC_LOW_SPEED_MODE
 #define LEDC_CHANNEL LEDC_CHANNEL_0
 
-static const char *servoTAG = "  -- servoControl";
+static const char *servoTAG = "  -- servControl";
 static float currentTiltAngle = TILT_ANGLE_INIT;
 
 // Function Declarations
@@ -25,6 +26,18 @@ void setServoAngle(float angle);
 // Initialize servo
 void servoControl_init() {
     ESP_LOGI(servoTAG, "Initializing servo on GPIO %d", SERVO_CH0_PIN);
+    
+    // Force GPIO low before PWM init to prevent floating high during boot
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << SERVO_CH0_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+    gpio_set_level(SERVO_CH0_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
     
     servo_config_t servo_cfg = {
         .max_angle = 180,
@@ -49,7 +62,6 @@ void servoControl_init() {
     }
     
     setServoAngle(TILT_ANGLE_INIT); // Start at center position
-    vTaskDelay(pdMS_TO_TICKS(500)); // Give servo time to reach position
 }
 
 void tiltToAngle(float angle) {
@@ -75,9 +87,9 @@ void tiltDegrees(float degrees) {
 }
 
 void setServoAngle(float angle) {
-    ESP_LOGI(servoTAG, "setServoAngle: angle = %.2f degrees", angle);
     iot_servo_write_angle(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, angle);
     currentTiltAngle = angle;
+    ESP_LOGI(servoTAG, "tilt angle = %.1f deg", angle);
 }
 
 float getCurrentAngle(void) {

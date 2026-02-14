@@ -40,6 +40,8 @@ void app_main(void)
     bool useRelIncMode = true;
     gimbalControlSvc_init(useRelIncMode);
 
+    vTaskDelay(5000 / portTICK_PERIOD_MS); // Short delay to ensure gimbal control is initialized before comms
+
     xTaskCreatePinnedToCore(gimbalControlSvc_mainTask,  "gimbalControlSvc", 4096, (void*)TASK_ID_GIMBAL_CONTROL,    TASK_PRIO_3, NULL, CORE0);
     xTaskCreatePinnedToCore(stepperControl_mainTask,    "stepperControl",   4096, (void*)TASK_ID_STEPPER_CONTROL,   TASK_PRIO_3, NULL, CORE1);
     xTaskCreatePinnedToCore(commsSvc_mainTask,          "commsSvc",         8192, (void*)TASK_ID_COMMS,             TASK_PRIO_3, NULL, tskNO_AFFINITY);
