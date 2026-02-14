@@ -6,13 +6,15 @@
 #include "servoControl.h"
 #include "commsSvc.h"
 #include "freertos/queue.h"
+#include "joystick.h"
 
 // -------------------------------------------------------------------------------
 // Includes
 
 // -------------------------------------------------------------------------------
 // Definitions
-#define GIMBAL_UPDATE_PERIOD    (500)           /** Gimbal control update period in milliseconds. */
+#define GIMBAL_UPDATE_PERIOD    (50)           /** Gimbal control update period in milliseconds. */
+#define SERVO_REL_MODE_ANGLE_STEP 1.0             /** Angle step in degrees for relative incremental mode. */
 
 // -------------------------------------------------------------------------------
 // Type defines
@@ -20,11 +22,12 @@
 // -------------------------------------------------------------------------------
 // Local variables
 static const char *TAG = "> gimbalControlSvc";  /** Logging tag for the gimbal control service. */
+static bool gimbalControlSvc_useRelativeIncMode = true;  /** Flag to enable relative incremental mode for pan control. */
 
 // -------------------------------------------------------------------------------
 // Local function declarations
 /** @brief Initialize gimbal control subsystems. */
-void gimbalControlSvc_init(void);
+void gimbalControlSvc_init(bool relativeIncMode);
 
 /** @brief Update gimbal position based on current commands. */
 static void gimbalControlUpdate(float panAngle, float tiltAngle);
@@ -33,11 +36,12 @@ static void gimbalControlUpdate(float panAngle, float tiltAngle);
 // Global function definitions
 // -------------------------------------------------------------------------------
 /** @brief Initialize gimbal subsystems (servo and stepper motor). */
-void gimbalControlSvc_init(void)
+void gimbalControlSvc_init(bool relativeIncMode)
 {
     ESP_LOGI(TAG, "Initializing gimbal control subsystems...");
     servoControl_init();
-    stepperControl_init();
+    stepperControl_init(relativeIncMode);
+    joystick_init();
     ESP_LOGI(TAG, "Gimbal control initialized");
 }
 
@@ -79,16 +83,32 @@ void gimbalControlSvc_mainTask(void *pvParameters) {
 /** @brief Update gimbal position and handle motor control. */
 static void gimbalControlUpdate(float panAngle, float tiltAngle)
 {
-    ESP_LOGI(TAG, "Updating gimbal control: pan=%.2f, tilt=%.2f", panAngle, tiltAngle);
+    //ESP_LOGI(TAG, "Updating gimbal control: pan=%.2f, tilt=%.2f", panAngle, tiltAngle);
     // Send pan command to stepper task via queue (non-blocking)
     if (stepperPanQueue != NULL)
     {
-        ESP_LOGI(TAG, "Queue pan command: %.2f degrees", panAngle);
+        //ESP_LOGI(TAG, "Queue pan command: %.2f degrees", panAngle);
         xQueueOverwrite(stepperPanQueue, &panAngle);
     }
 
     // Tilt servo is fast, can call directly
-    tiltToAngle(tiltAngle);
+    ESP_LOGI(TAG, "Tilt angle: %.2f degrees", tiltAngle);
+    if (gimbalControlSvc_useRelativeIncMode) {
+        if (tiltAngle < TILT_ANGLE_INIT) {
+            ESP_LOGI(TAG, "Tilt down");
+            tiltDegrees(-SERVO_REL_MODE_ANGLE_STEP);
+        }
+        else if (tiltAngle > TILT_ANGLE_INIT) {
+            ESP_LOGI(TAG, "Tilt up");
+            tiltDegrees(SERVO_REL_MODE_ANGLE_STEP);
+        }
+        else {
+            // No movement needed for zero angle
+        }
+    }
+    else {
+        tiltToAngle(tiltAngle);
+    }
 }
 
 void testGimbal(float panAngle, float tiltAngle) {

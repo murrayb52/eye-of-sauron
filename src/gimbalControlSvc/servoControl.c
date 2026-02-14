@@ -12,16 +12,15 @@
 #define LEDC_MODE LEDC_LOW_SPEED_MODE
 #define LEDC_CHANNEL LEDC_CHANNEL_0
 
-#define ANGLE_LIMIT_MIN 0.0
-#define ANGLE_LIMIT_MAX 180.0
-#define ANGLE_INIT 90.0
-
 static const char *servoTAG = "  -- servoControl";
+static float currentTiltAngle = TILT_ANGLE_INIT;
 
 // Function Declarations
 void tiltToAngle(float angle);
-void getCurrentAngle(float *angle);
+void tiltDegrees(float degrees);
+float getCurrentAngle(void);
 void servoCleanup();
+void setServoAngle(float angle);
 
 // Initialize servo
 void servoControl_init() {
@@ -45,25 +44,36 @@ void servoControl_init() {
     if (err != ESP_OK) {
         ESP_LOGE(servoTAG, "iot_servo_init failed: %d", err);
     }
-    iot_servo_write_angle(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0.0f); // Start at 0 degrees
+    setServoAngle(TILT_ANGLE_INIT); // Start at 0 degrees
 }
 
 void tiltToAngle(float angle) {
-    if (angle < ANGLE_LIMIT_MIN) {
-        ESP_LOGW(servoTAG, "Clip (%.2f) to min angle (%.2f)", angle, ANGLE_LIMIT_MIN);
-        angle = ANGLE_LIMIT_MIN;
+    if (angle < TILT_ANGLE_LIMIT_MIN) {
+        ESP_LOGW(servoTAG, "Clip (%.2f) to min angle (%.2f)", angle, TILT_ANGLE_LIMIT_MIN);
+        angle = TILT_ANGLE_LIMIT_MIN;
     }
     
-    if (angle > ANGLE_LIMIT_MAX) {
-        ESP_LOGW(servoTAG, "Clip (%.2f) to max angle (%.2f)", angle, ANGLE_LIMIT_MAX);
-        angle = ANGLE_LIMIT_MAX;
+    if (angle > TILT_ANGLE_LIMIT_MAX) {
+        ESP_LOGW(servoTAG, "Clip (%.2f) to max angle (%.2f)", angle, TILT_ANGLE_LIMIT_MAX);
+        angle = TILT_ANGLE_LIMIT_MAX;
     }
 
-    iot_servo_write_angle(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, angle);
+    setServoAngle(angle);
 }
 
-void getCurrentAngle(float *angle) {
-    iot_servo_read_angle(LEDC_MODE, LEDC_CHANNEL, angle);
+void tiltDegrees(float degrees) {
+    // Calculate target angle by adding relative increment to current angle
+    float targetAngle = getCurrentAngle() + degrees;
+    tiltToAngle(targetAngle);
+}
+
+void setServoAngle(float angle) {
+    iot_servo_write_angle(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, angle);
+    currentTiltAngle = angle;
+}
+
+float getCurrentAngle(void) {
+    return currentTiltAngle;
 }
 
 // Cleanup

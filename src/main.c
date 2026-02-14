@@ -39,7 +39,8 @@ void app_main(void)
 {
     vTaskDelay(5000 / portTICK_PERIOD_MS); // Delay to allow gimbal control to initialize before starting comms
 
-    gimbalControlSvc_init();
+    bool useRelIncMode = true;
+    gimbalControlSvc_init(useRelIncMode);
 
     vTaskDelay(5000 / portTICK_PERIOD_MS); // Delay to allow gimbal control to initialize before starting comms
     

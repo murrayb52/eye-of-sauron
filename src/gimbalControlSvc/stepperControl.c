@@ -39,11 +39,11 @@
 #define PAN_ANGLE_MIN -135.0
 #define PAN_ANGLE_MAX 135.0
 #define MIN_ANGLE_DIFF ( 1.0 / STEPS_PER_REVOLUTION * 360.0) // Minimum angle difference to trigger a step
-#define ACCEL_STEPS 50
 #define DIR_CLOCKWISE 0
 #define DIR_COUNTERCLOCKWISE 1
 #define PAN_DEADBAND_ANGLE_NEG (float)(-1.0)
 #define PAN_DEADBAND_ANGLE_POS (float)(1.0)
+#define relIncModeStepSize 10
 
 // -------------------------------------------------------------------------------
 // Type defines
@@ -59,6 +59,8 @@ static int currentPanSteps = 0;
 static bool currentDir = DIR_COUNTERCLOCKWISE;
 /** @brief Logging tag for stepper control messages. */
 static const char *TAG = "  -- stepperControl";
+
+static bool gimbalRelIncMode = true; // true = relative incremental mode, false = absolute position mode
 
 /** @brief Queue for receiving pan angle commands. */
 QueueHandle_t stepperPanQueue = NULL;
@@ -83,17 +85,18 @@ void toggleDirection(void);
  */
 void setDirection(int direction);
 
-void panToAngleRel(float targetAngle);
+void panToAngle(float targetAngle);
 void moveSteps(int steps);
 float convertStepsToAngle(int steps);
 static int convertAngleToSteps(float angle);
-void applyPanDeadband(float* angle);
+void panDeadbandFilter(float* angle);
 
 // -------------------------------------------------------------------------------
 // Global function definitions
 // -------------------------------------------------------------------------------
-void stepperControl_init(void) {
+void stepperControl_init(bool relativeIncMode) {
     ESP_LOGI(TAG, "Initializing motor control...");
+    gimbalRelIncMode = relativeIncMode;
     
     // Create queue for pan commands (length 1 for xQueueOverwrite)
     stepperPanQueue = xQueueCreate(1, sizeof(float));
@@ -137,8 +140,25 @@ void stepperControl_mainTask(void *pvParameters)
         {
             if (xQueueReceive(stepperPanQueue, &panAngle, portMAX_DELAY) == pdTRUE)
             {
-                ESP_LOGI(TAG, "Received pan command: %.2f degrees", panAngle);
-                panToAngleRel(panAngle);
+                //ESP_LOGI(TAG, "Received pan command: %.2f degrees", panAngle);
+                if (gimbalRelIncMode) {
+                    if (panAngle < 0) {
+                        setDirection(DIR_COUNTERCLOCKWISE);
+                        moveSteps(relIncModeStepSize);
+                    }
+                    else if (panAngle > 0) {
+                        setDirection(DIR_CLOCKWISE);
+                        moveSteps(relIncModeStepSize);
+                    }
+                    else {
+                        // No movement needed for zero angle
+                        continue;
+                    }
+                }
+                else {
+                    // Absolute position mode
+                    panToAngle(panAngle);
+                }
             }
             vTaskDelay(10 / portTICK_PERIOD_MS); // Short delay to prevent tight loop if queue is empty
         }
@@ -167,12 +187,21 @@ static int mapDegreesToSteps(float angleVector) {
     return targetAngleInSteps;
 }
 
-void applyPanDeadband(float* angle) {
+void panDeadbandFilter(float* angle) {
     if (*angle > PAN_DEADBAND_ANGLE_NEG && *angle < PAN_DEADBAND_ANGLE_POS) {
         //ESP_LOGI(TAG, "Apply deadband: %.2f is below threshold %.2f, setting to 0", *angle, MIN_ANGLE_DIFF);
         *angle = 0.0f;
     }
 }
+
+void panHighPassFilter(int* stepsDiffVector) {
+    // Simple high-pass filter to prevent small oscillations around target position
+    if (abs(*stepsDiffVector) < convertAngleToSteps(MIN_ANGLE_DIFF)) {
+        //ESP_LOGI(TAG, "Apply high-pass filter: %d steps is below threshold %d, setting to 0", *stepsDiffVector, convertAngleToSteps(MIN_ANGLE_DIFF));
+        *stepsDiffVector = 0;
+    }
+}
+
 /**
  * @brief Generate a single step pulse on the motor.
  *
@@ -218,34 +247,42 @@ int getDirection() {
 
 
 void moveSteps(int steps) {
-    ESP_LOGI(TAG, "Move %d steps", steps);
+    //ESP_LOGI(TAG, "Move %d steps", steps);
     for (int step = 0; step <= steps; step++ ) {
         stepMotor(START_DELAY_US);
         
         // Yield to other tasks every 100 steps to prevent watchdog timeout
+        /*
         if (step % 100 == 0) {
             //ESP_LOGI(TAG, "vTaskDelay after %d steps", step);
             vTaskDelay(1);  // Delay 1 tick (~10ms) to let IDLE task run
         }
+        */
     }
 }
 
-void panToAngleRel(float targetAngleFromCentre) {
+void panToAngle(float targetAngleFromCentre) {
     // pan to a target angle relative to the midpoint (0 degrees) in the closest direction
-    applyPanDeadband(&targetAngleFromCentre);
+    panDeadbandFilter(&targetAngleFromCentre);
     int targetPanSteps = mapDegreesToSteps(targetAngleFromCentre);
     int stepsDiffVector = currentPanSteps - targetPanSteps;
-    ESP_LOGI(TAG, "currentPanSteps: %d, targetPanSteps: %d, stepsDiffVector: %d", currentPanSteps, targetPanSteps, stepsDiffVector);
+    panHighPassFilter(&stepsDiffVector);
+    //ESP_LOGI(TAG, "currentPanSteps: %d, targetPanSteps: %d, stepsDiffVector: %d", currentPanSteps, targetPanSteps, stepsDiffVector);
 
     if (targetPanSteps < currentPanSteps) {
         setDirection(DIR_COUNTERCLOCKWISE);
         moveSteps(abs(stepsDiffVector));
         currentPanSteps -= abs(stepsDiffVector);
+        ESP_LOGI(TAG, "[C-CW] Moved to %.2f degrees (steps: %d)", convertStepsToAngle(currentPanSteps), currentPanSteps);
     }
-    else {
+    else if (targetPanSteps > currentPanSteps){
         setDirection(DIR_CLOCKWISE);
         moveSteps(abs(stepsDiffVector));
         currentPanSteps += abs(stepsDiffVector);
+        ESP_LOGI(TAG, "[CW] Moved to %.2f degrees (steps: %d)", convertStepsToAngle(currentPanSteps), currentPanSteps);
+    }
+    else {
+        //  no movement needed
     }
 }
 

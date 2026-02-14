@@ -9,7 +9,7 @@
 
 // -------------------------------------------------------------------------------
 // Definitions
-#define COMMS_SVC_SAMPLE_PERIOD_MS   (25)    /** Comms service sample period in milliseconds. */
+#define COMMS_SVC_SAMPLE_PERIOD_MS   (10)    /** Comms service sample period in milliseconds. */
 
 
 // -------------------------------------------------------------------------------
@@ -58,12 +58,11 @@ static void commsSvc_init(void)
 {
     gimbalAttitudeTxQueue = xQueueCreate(1, sizeof(gimbalAttitude_t));
 
+    // used to send serial commands to the gimbalControlSvc task, but currently not used
     if (gimbalAttitudeTxQueue == NULL)
     {
         ESP_LOGE(TAG, "Failed to create gimbalAttitudeTxQueue");
     }
-
-    joystick_init();
 }
 
 

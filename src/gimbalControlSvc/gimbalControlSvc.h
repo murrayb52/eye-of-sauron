@@ -31,6 +31,6 @@ void gimbalControlSvc_mainTask(void *pvParameters);
 /**
  * @brief Initialize gimbal control subsystems.
  */
-void gimbalControlSvc_init(void);
+void gimbalControlSvc_init(bool relativeIncMode);
 
 #endif // GIMBAL_CONTROL_SVC_H
