@@ -37,8 +37,9 @@
  */
 void app_main(void)
 {
+    vTaskDelay(5000 / portTICK_PERIOD_MS); // Delay to allow gimbal control to initialize before starting comms
+
     gimbalControlSvc_init();
-    stepperControl_init();
 
     vTaskDelay(5000 / portTICK_PERIOD_MS); // Delay to allow gimbal control to initialize before starting comms
     

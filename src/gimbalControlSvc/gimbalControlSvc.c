@@ -5,13 +5,14 @@
 #include "stepperControl.h"
 #include "servoControl.h"
 #include "commsSvc.h"
+#include "freertos/queue.h"
 
 // -------------------------------------------------------------------------------
 // Includes
 
 // -------------------------------------------------------------------------------
 // Definitions
-#define GIMBAL_UPDATE_PERIOD    (50)           /** Gimbal control update period in milliseconds. */
+#define GIMBAL_UPDATE_PERIOD    (500)           /** Gimbal control update period in milliseconds. */
 
 // -------------------------------------------------------------------------------
 // Type defines
@@ -50,7 +51,6 @@ void gimbalControlSvc_init(void)
 void gimbalControlSvc_mainTask(void *pvParameters) {
 
     (void) pvParameters;
-    gimbalControlSvc_init();
 
     gimbalAttitude_t lastAttitude = { .panDeg = 0.0, .tiltDeg = 90.0 };
 
@@ -79,8 +79,15 @@ void gimbalControlSvc_mainTask(void *pvParameters) {
 /** @brief Update gimbal position and handle motor control. */
 static void gimbalControlUpdate(float panAngle, float tiltAngle)
 {
-    //ESP_LOGI(TAG, "Set gimbal -> pan: %f, tilt: %f", panAngle, tiltAngle);
-    //panToAngleRel(panAngle);
+    ESP_LOGI(TAG, "Updating gimbal control: pan=%.2f, tilt=%.2f", panAngle, tiltAngle);
+    // Send pan command to stepper task via queue (non-blocking)
+    if (stepperPanQueue != NULL)
+    {
+        ESP_LOGI(TAG, "Queue pan command: %.2f degrees", panAngle);
+        xQueueOverwrite(stepperPanQueue, &panAngle);
+    }
+
+    // Tilt servo is fast, can call directly
     tiltToAngle(tiltAngle);
 }
 
@@ -100,15 +107,3 @@ void testGimbal(float panAngle, float tiltAngle) {
     vTaskDelay(GIMBAL_UPDATE_PERIOD / portTICK_PERIOD_MS);
 }
 
-void testPanSmoothRevolution() {
-    static const float panInc = 45.0;
-    static const int maxPanSteps = (int)(270.0 / panInc);
-
-    for (int panStep = 0; panStep <= maxPanSteps; panStep++) {
-        ESP_LOGI(TAG, "Pan to angle: %f", panStep * panInc);
-        rotateAngle(panInc);
-        vTaskDelay(GIMBAL_UPDATE_PERIOD / portTICK_PERIOD_MS);
-    }
-
-    toggleDirection();
-}

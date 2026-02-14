@@ -3,6 +3,12 @@
 
 // -------------------------------------------------------------------------------
 // Includes
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // -------------------------------------------------------------------------------
 // Defines
@@ -12,9 +18,17 @@
 
 // -------------------------------------------------------------------------------
 // Global variables
+extern QueueHandle_t stepperPanQueue;
 
 // -------------------------------------------------------------------------------
 // Global function declarations
+
+/**
+ * @brief Main FreeRTOS task for stepper motor control.
+ *
+ * @param pvParameters FreeRTOS task parameter (unused).
+ */
+void stepperControl_mainTask(void *pvParameters);
 
 /**
  * @brief Initialize motor/stepper control subsystem.
@@ -32,8 +46,12 @@ void motorOperate(void);
  */
 void panToAngle(float angle);
 void panToAngleRel(float targetAngleRel);
-void rotateAngle(float panAngleRel);
 void setDirection(int clockwise);
 void toggleDirection(void);
+void moveSteps(int steps);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // STEPPER_CONTROL_H

@@ -31,16 +31,19 @@
 /** @brief Steps per motor revolution (A4988 in full-step mode). */
 #define STEPS_PER_REVOLUTION 200
 /** @brief Initial step delay in microseconds (slow start). */
-#define START_DELAY_US 4000
+#define START_DELAY_US 1500
 /** @brief Target step delay in microseconds (final speed). */
 #define TARGET_DELAY_US 1000
 /** @brief Number of steps for acceleration ramp. */
 #define PAN_ANGLE_MID 0.0
 #define PAN_ANGLE_MIN -135.0
 #define PAN_ANGLE_MAX 135.0
+#define MIN_ANGLE_DIFF ( 1.0 / STEPS_PER_REVOLUTION * 360.0) // Minimum angle difference to trigger a step
 #define ACCEL_STEPS 50
-#define DIR_CLOCKWISE 1
-#define DIR_COUNTERCLOCKWISE 0
+#define DIR_CLOCKWISE 0
+#define DIR_COUNTERCLOCKWISE 1
+#define PAN_DEADBAND_ANGLE_NEG (float)(-1.0)
+#define PAN_DEADBAND_ANGLE_POS (float)(1.0)
 
 // -------------------------------------------------------------------------------
 // Type defines
@@ -48,12 +51,17 @@
 // -------------------------------------------------------------------------------
 // Local variables
 
-/** @brief Current motor angle in degrees. */
-static float currentAngle = 0.0;
+/** @brief Current motor angle in steps.
+ * Zero at centre. Negative  is counter-clockwise, positive is clockwise
+*/
+static int currentPanSteps = 0;
 /** @brief Current motor direction (0 or 1). */
 static bool currentDir = DIR_COUNTERCLOCKWISE;
 /** @brief Logging tag for stepper control messages. */
 static const char *TAG = "  -- stepperControl";
+
+/** @brief Queue for receiving pan angle commands. */
+QueueHandle_t stepperPanQueue = NULL;
 
 // -------------------------------------------------------------------------------
 // Local function declarations
@@ -75,9 +83,11 @@ void toggleDirection(void);
  */
 void setDirection(int direction);
 
-void panToAngle(float targetAngle);
-int convertAngleToSteps(float angle);
-static void moveSteps(int steps);
+void panToAngleRel(float targetAngle);
+void moveSteps(int steps);
+float convertStepsToAngle(int steps);
+static int convertAngleToSteps(float angle);
+void applyPanDeadband(float* angle);
 
 // -------------------------------------------------------------------------------
 // Global function definitions
@@ -85,9 +95,16 @@ static void moveSteps(int steps);
 void stepperControl_init(void) {
     ESP_LOGI(TAG, "Initializing motor control...");
     
+    // Create queue for pan commands (length 1 for xQueueOverwrite)
+    stepperPanQueue = xQueueCreate(1, sizeof(float));
+    if (stepperPanQueue == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create stepperPanQueue");
+    }
+    
     // Configure GPIO pins
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << PIN_STEP) | (1ULL << PIN_DIR) | (1ULL << PIN_SLEEP),
+        .pin_bit_mask = (1ULL << PIN_STEP) | (1ULL << PIN_DIR) | (1ULL << PIN_SLEEP) | (1ULL << RESET_PAN_PIN),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -99,15 +116,63 @@ void stepperControl_init(void) {
     gpio_set_level(PIN_SLEEP, 1);
     ESP_LOGI(TAG, "Driver awake");
     
+    gpio_set_level(RESET_PAN_PIN, 1);
+
     // Set direction
     setDirection(currentDir);
     ESP_LOGI(TAG, "Direction set, motor ready");
 }
 
+void stepperControl_mainTask(void *pvParameters)
+{
+    (void)pvParameters;
+    
+    ESP_LOGI(TAG, "Stepper control task started");
+    
+    while (1)
+    {
+        static float panAngle = 0.0;
+        
+        if (stepperPanQueue != NULL)
+        {
+            if (xQueueReceive(stepperPanQueue, &panAngle, portMAX_DELAY) == pdTRUE)
+            {
+                ESP_LOGI(TAG, "Received pan command: %.2f degrees", panAngle);
+                panToAngleRel(panAngle);
+            }
+            vTaskDelay(10 / portTICK_PERIOD_MS); // Short delay to prevent tight loop if queue is empty
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Stepper pan queue is NULL");
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+    }
+}
+
 // -------------------------------------------------------------------------------
 // Local function definitions
 // -------------------------------------------------------------------------------
+static int convertAngleToSteps(float angle) {
+    return (int)(angle / 360.0 * STEPS_PER_REVOLUTION);
+}
 
+float convertStepsToAngle(int steps) {
+    return ((float)steps / STEPS_PER_REVOLUTION) * 360.0f;
+}
+
+static int mapDegreesToSteps(float angleVector) {
+    // Map angle in degrees to steps, assuming 0 degrees is center, negative is counter-clockwise, positive is clockwise
+    int targetAngleInSteps = convertAngleToSteps(angleVector);
+    return targetAngleInSteps;
+}
+
+void applyPanDeadband(float* angle) {
+    if (*angle > PAN_DEADBAND_ANGLE_NEG && *angle < PAN_DEADBAND_ANGLE_POS) {
+        //ESP_LOGI(TAG, "Apply deadband: %.2f is below threshold %.2f, setting to 0", *angle, MIN_ANGLE_DIFF);
+        *angle = 0.0f;
+    }
+}
 /**
  * @brief Generate a single step pulse on the motor.
  *
@@ -126,7 +191,6 @@ static void stepMotor(int delayUs) {
  */
 void toggleDirection(void) {
     currentDir = !currentDir;
-    ESP_LOGI(TAG, "Change dir: %d", currentDir);
     setDirection(currentDir);
 }
 
@@ -135,6 +199,12 @@ void toggleDirection(void) {
  */
 void setDirection(int direction) {
     currentDir = direction;
+    if (direction == DIR_CLOCKWISE) {
+        ESP_LOGI(TAG, "Set direction: CLOCKWISE");
+    }
+    else {
+        ESP_LOGI(TAG, "Set direction: COUNTERCLOCKWISE");
+    }
     gpio_set_level(PIN_DIR, direction);
 }
 
@@ -147,17 +217,8 @@ int getDirection() {
 }
 
 
-void rotateAngle(float panAngleRel) {
-    int pulseSteps = convertAngleToSteps(panAngleRel);
-    ESP_LOGI(TAG, "Rotate %f degrees (%d steps)", panAngleRel, pulseSteps);
-    moveSteps(pulseSteps);
-    currentAngle += panAngleRel;
-    if (currentAngle >= 360.0) {
-        ESP_LOGW(TAG, "Wrap currentAngle from %f to %f", currentAngle, currentAngle - 360.0);
-    }
-}
-
-static void moveSteps(int steps) {
+void moveSteps(int steps) {
+    ESP_LOGI(TAG, "Move %d steps", steps);
     for (int step = 0; step <= steps; step++ ) {
         stepMotor(START_DELAY_US);
         
@@ -169,35 +230,23 @@ static void moveSteps(int steps) {
     }
 }
 
-void panToAngle(float targetAngle) {
-    int dir = DIR_CLOCKWISE;
-    if (targetAngle - currentAngle > 180.0) {
-        ESP_LOGI(TAG, "Pan clockwise");
-    }
-    else if (currentAngle - targetAngle > 180.0) {
-        dir = DIR_COUNTERCLOCKWISE;
-        ESP_LOGI(TAG, "Pan counter-clockwise");
-    }
-
-    setDirection(dir);   // move in closest direction to target angle
-    float angleDiff = (float)abs((int)(currentAngle - targetAngle));
-    rotateAngle(angleDiff);
-}
-
-void panToAngleRel(float targetAngleRel) {
+void panToAngleRel(float targetAngleFromCentre) {
     // pan to a target angle relative to the midpoint (0 degrees) in the closest direction
-    int dir = DIR_CLOCKWISE;
-    if (targetAngleRel < currentAngle) {
-        dir = DIR_COUNTERCLOCKWISE;
-        ESP_LOGI(TAG, "Pan counter-clockwise");
-    }
-    else if (targetAngleRel >= currentAngle) {
-        ESP_LOGI(TAG, "Pan clockwise");
-    }
+    applyPanDeadband(&targetAngleFromCentre);
+    int targetPanSteps = mapDegreesToSteps(targetAngleFromCentre);
+    int stepsDiffVector = currentPanSteps - targetPanSteps;
+    ESP_LOGI(TAG, "currentPanSteps: %d, targetPanSteps: %d, stepsDiffVector: %d", currentPanSteps, targetPanSteps, stepsDiffVector);
 
-    setDirection(dir);   // move in closest direction to target angle
-    float angleDiff = (float)abs((int)(currentAngle - targetAngleRel));
-    rotateAngle(angleDiff);
+    if (targetPanSteps < currentPanSteps) {
+        setDirection(DIR_COUNTERCLOCKWISE);
+        moveSteps(abs(stepsDiffVector));
+        currentPanSteps -= abs(stepsDiffVector);
+    }
+    else {
+        setDirection(DIR_CLOCKWISE);
+        moveSteps(abs(stepsDiffVector));
+        currentPanSteps += abs(stepsDiffVector);
+    }
 }
 
 
@@ -206,9 +255,5 @@ void resetPosition() {
     gpio_set_level(RESET_PAN_PIN, 0); // Assert reset to move to start position
     esp_rom_delay_us(1000000); // Hold reset for 1 second
     gpio_set_level(RESET_PAN_PIN, 1); // Release reset
-    currentAngle = 0.0; // Reset current angle tracking
-}
-
-int convertAngleToSteps(float angle) {
-    return (int)(angle / 360.0 * STEPS_PER_REVOLUTION);
+    currentPanSteps = 0; // Reset current angle tracking
 }
