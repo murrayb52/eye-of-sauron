@@ -24,6 +24,8 @@ void setServoAngle(float angle);
 
 // Initialize servo
 void servoControl_init() {
+    ESP_LOGI(servoTAG, "Initializing servo on GPIO %d", SERVO_CH0_PIN);
+    
     servo_config_t servo_cfg = {
         .max_angle = 180,
         .min_width_us = 500,    // 1500 - 10 * 90 = 600 (+ margin)
@@ -40,11 +42,14 @@ void servoControl_init() {
         },
         .channel_number = 1,
     };
+    
     esp_err_t err = iot_servo_init(LEDC_LOW_SPEED_MODE, &servo_cfg);
     if (err != ESP_OK) {
         ESP_LOGE(servoTAG, "iot_servo_init failed: %d", err);
     }
-    setServoAngle(TILT_ANGLE_INIT); // Start at 0 degrees
+    
+    setServoAngle(TILT_ANGLE_INIT); // Start at center position
+    vTaskDelay(pdMS_TO_TICKS(500)); // Give servo time to reach position
 }
 
 void tiltToAngle(float angle) {
@@ -63,11 +68,14 @@ void tiltToAngle(float angle) {
 
 void tiltDegrees(float degrees) {
     // Calculate target angle by adding relative increment to current angle
-    float targetAngle = getCurrentAngle() + degrees;
-    tiltToAngle(targetAngle);
+    if (degrees != 0.0f) {
+        float targetAngle = getCurrentAngle() + degrees;
+        tiltToAngle(targetAngle);
+    }
 }
 
 void setServoAngle(float angle) {
+    ESP_LOGI(servoTAG, "setServoAngle: angle = %.2f degrees", angle);
     iot_servo_write_angle(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, angle);
     currentTiltAngle = angle;
 }

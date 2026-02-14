@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------
 // Definitions
 #define GIMBAL_UPDATE_PERIOD    (50)           /** Gimbal control update period in milliseconds. */
-#define SERVO_REL_MODE_ANGLE_STEP 1.0             /** Angle step in degrees for relative incremental mode. */
+#define SERVO_REL_MODE_ANGLE_STEP (2.0f)             /** Angle step in degrees for relative incremental mode. */
+
+#define IGNORE_TILT_CHANGE_LOWER_LIMIT (85.0f)
+#define IGNORE_TILT_CHANGE_UPPER_LIMIT (95.0f)
 
 // -------------------------------------------------------------------------------
 // Type defines
@@ -31,6 +34,8 @@ void gimbalControlSvc_init(bool relativeIncMode);
 
 /** @brief Update gimbal position based on current commands. */
 static void gimbalControlUpdate(float panAngle, float tiltAngle);
+
+float convertJoystickTiltToIncrement(float tiltAngle);
 
 // -------------------------------------------------------------------------------
 // Global function definitions
@@ -68,10 +73,10 @@ void gimbalControlSvc_mainTask(void *pvParameters) {
             if (xQueueReceive(gimbalAttitudeTxQueue, &sample, 0) == pdTRUE)
             {
                 lastAttitude = sample;
+                gimbalControlUpdate(lastAttitude.panDeg, lastAttitude.tiltDeg);
             }
         }
 
-        gimbalControlUpdate(lastAttitude.panDeg, lastAttitude.tiltDeg);
         vTaskDelay(GIMBAL_UPDATE_PERIOD / portTICK_PERIOD_MS);
     }
 }
@@ -92,19 +97,9 @@ static void gimbalControlUpdate(float panAngle, float tiltAngle)
     }
 
     // Tilt servo is fast, can call directly
-    ESP_LOGI(TAG, "Tilt angle: %.2f degrees", tiltAngle);
     if (gimbalControlSvc_useRelativeIncMode) {
-        if (tiltAngle < TILT_ANGLE_INIT) {
-            ESP_LOGI(TAG, "Tilt down");
-            tiltDegrees(-SERVO_REL_MODE_ANGLE_STEP);
-        }
-        else if (tiltAngle > TILT_ANGLE_INIT) {
-            ESP_LOGI(TAG, "Tilt up");
-            tiltDegrees(SERVO_REL_MODE_ANGLE_STEP);
-        }
-        else {
-            // No movement needed for zero angle
-        }
+        float tiltChange = convertJoystickTiltToIncrement(tiltAngle);
+        tiltDegrees(tiltChange);
     }
     else {
         tiltToAngle(tiltAngle);
@@ -127,3 +122,18 @@ void testGimbal(float panAngle, float tiltAngle) {
     vTaskDelay(GIMBAL_UPDATE_PERIOD / portTICK_PERIOD_MS);
 }
 
+float convertJoystickTiltToIncrement(float joystickAngle) {
+    float tiltChange = 0.0f;
+    if (joystickAngle < IGNORE_TILT_CHANGE_LOWER_LIMIT) {
+        ESP_LOGI(TAG, "Tilt down");
+        tiltChange = -SERVO_REL_MODE_ANGLE_STEP;
+    }
+    else if (joystickAngle > IGNORE_TILT_CHANGE_UPPER_LIMIT) {
+        ESP_LOGI(TAG, "Tilt up");
+        tiltChange = SERVO_REL_MODE_ANGLE_STEP;
+    }
+    else {
+        tiltChange = 0.0f; // No change, return a value that indicates no movement needed
+    }
+    return tiltChange;
+}

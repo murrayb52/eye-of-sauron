@@ -39,8 +39,8 @@
 #define PAN_ANGLE_MIN -135.0
 #define PAN_ANGLE_MAX 135.0
 #define MIN_ANGLE_DIFF ( 1.0 / STEPS_PER_REVOLUTION * 360.0) // Minimum angle difference to trigger a step
-#define DIR_CLOCKWISE 0
-#define DIR_COUNTERCLOCKWISE 1
+#define DIR_CLOCKWISE 1
+#define DIR_COUNTERCLOCKWISE (!DIR_CLOCKWISE)
 #define PAN_DEADBAND_ANGLE_NEG (float)(-1.0)
 #define PAN_DEADBAND_ANGLE_POS (float)(1.0)
 #define relIncModeStepSize 10

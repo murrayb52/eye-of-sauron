@@ -99,7 +99,7 @@ bool joystick_getInputAttitude(gimbalAttitude_t *attitude)
     }
 
     deadBandFilter(&joystickSample.yRaw, Y_RAW_MID, 400);
-    deadBandFilter(&joystickSample.xRaw, X_RAW_MID, 200);
+    // do not deadband X because gimbalControlSvc needs to know when joystick is centered
 
     attitude->tiltDeg = joystickMapAxis((float)joystickSample.xRaw, ADC_MIN_READING, X_RAW_MID, ADC_MAX_READING, JOYSTICK_TILT_MIN, JOYSTICK_TILT_MAX);
     attitude->panDeg = -joystickMapAxis((float)joystickSample.yRaw, ADC_MIN_READING, Y_RAW_MID, ADC_MAX_READING, JOYSTICK_PAN_MIN, JOYSTICK_PAN_MAX);
