@@ -28,17 +28,21 @@
 #define PIN_DIR       33
 /** @brief GPIO pin connected to A4988 RESET signal to revert to start position. */
 #define RESET_PAN_PIN 12
-/** @brief Steps per motor revolution (A4988 in full-step mode). */
-#define STEPS_PER_REVOLUTION 200
-/** @brief Initial step delay in microseconds (slow start). */
+/** @brief Full steps per motor revolution (200 for 1.8° stepper). */
+#define FULL_STEPS_PER_REVOLUTION 200
+/** @brief Microstepping multiplier (8 for 1/8 step mode: MS1=1, MS2=1, MS3=0). */
+#define MICROSTEP_MULTIPLIER 8
+/** @brief Total pulses per revolution in current microstepping mode. */
+#define PULSES_PER_REVOLUTION (FULL_STEPS_PER_REVOLUTION * MICROSTEP_MULTIPLIER)
+/** @brief Initial pulse delay in microseconds (slow start). */
 #define START_DELAY_US 1500
-/** @brief Target step delay in microseconds (final speed). */
+/** @brief Target pulse delay in microseconds (final speed). */
 #define TARGET_DELAY_US 1000
-/** @brief Number of steps for acceleration ramp. */
+/** @brief Pan angle limits. */
 #define PAN_ANGLE_MID 0.0
 #define PAN_ANGLE_MIN -135.0
 #define PAN_ANGLE_MAX 135.0
-#define MIN_ANGLE_DIFF ( 1.0 / STEPS_PER_REVOLUTION * 360.0) // Minimum angle difference to trigger a step
+#define MIN_ANGLE_DIFF ( 1.0 / PULSES_PER_REVOLUTION * 360.0) // Minimum angle difference to trigger a pulse
 #define DIR_CLOCKWISE 1
 #define DIR_COUNTERCLOCKWISE (!DIR_CLOCKWISE)
 #define PAN_DEADBAND_ANGLE_NEG (float)(-1.0)
@@ -51,14 +55,15 @@
 // -------------------------------------------------------------------------------
 // Local variables
 
-/** @brief Current motor angle in steps.
- * Zero at centre. Negative  is counter-clockwise, positive is clockwise
-*/
-static int currentPanSteps = 0;
+/** @brief Current motor position in pulses (microsteps).
+ * Zero at centre. Negative is counter-clockwise, positive is clockwise.
+ */
+static int currentPanPulses = 0;
 /** @brief Current motor direction (0 or 1). */
 static bool currentDir = DIR_COUNTERCLOCKWISE;
+
 /** @brief Logging tag for stepper control messages. */
-static const char *TAG = "  -- stepperControl";
+static const char *TAG = "  -- stepControl";
 
 static bool gimbalRelIncMode = true; // true = relative incremental mode, false = absolute position mode
 
@@ -86,9 +91,9 @@ void toggleDirection(void);
 void setDirection(int direction);
 
 void panToAngle(float targetAngle);
-void moveSteps(int steps);
-float convertStepsToAngle(int steps);
-static int convertAngleToSteps(float angle);
+void movePulses(int pulses);
+float convertPulsesToAngle(int pulses);
+static int convertAngleToPulses(float angle);
 void panDeadbandFilter(float* angle);
 
 // -------------------------------------------------------------------------------
@@ -144,11 +149,11 @@ void stepperControl_mainTask(void *pvParameters)
                 if (gimbalRelIncMode) {
                     if (panAngle < 0) {
                         setDirection(DIR_COUNTERCLOCKWISE);
-                        moveSteps(relIncModeStepSize);
+                        movePulses(relIncModeStepSize);
                     }
                     else if (panAngle > 0) {
                         setDirection(DIR_CLOCKWISE);
-                        moveSteps(relIncModeStepSize);
+                        movePulses(relIncModeStepSize);
                     }
                     else {
                         // No movement needed for zero angle
@@ -173,18 +178,18 @@ void stepperControl_mainTask(void *pvParameters)
 // -------------------------------------------------------------------------------
 // Local function definitions
 // -------------------------------------------------------------------------------
-static int convertAngleToSteps(float angle) {
-    return (int)(angle / 360.0 * STEPS_PER_REVOLUTION);
+static int convertAngleToPulses(float angle) {
+    return (int)(angle / 360.0 * PULSES_PER_REVOLUTION);
 }
 
-float convertStepsToAngle(int steps) {
-    return ((float)steps / STEPS_PER_REVOLUTION) * 360.0f;
+float convertPulsesToAngle(int pulses) {
+    return ((float)pulses / PULSES_PER_REVOLUTION) * 360.0f;
 }
 
-static int mapDegreesToSteps(float angleVector) {
-    // Map angle in degrees to steps, assuming 0 degrees is center, negative is counter-clockwise, positive is clockwise
-    int targetAngleInSteps = convertAngleToSteps(angleVector);
-    return targetAngleInSteps;
+static int mapDegreesToPulses(float angleVector) {
+    // Map angle in degrees to pulses, assuming 0 degrees is center, negative is counter-clockwise, positive is clockwise
+    int targetAngleInPulses = convertAngleToPulses(angleVector);
+    return targetAngleInPulses;
 }
 
 void panDeadbandFilter(float* angle) {
@@ -194,25 +199,25 @@ void panDeadbandFilter(float* angle) {
     }
 }
 
-void panHighPassFilter(int* stepsDiffVector) {
+void panHighPassFilter(int* pulsesDiffVector) {
     // Simple high-pass filter to prevent small oscillations around target position
-    if (abs(*stepsDiffVector) < convertAngleToSteps(MIN_ANGLE_DIFF)) {
-        //ESP_LOGI(TAG, "Apply high-pass filter: %d steps is below threshold %d, setting to 0", *stepsDiffVector, convertAngleToSteps(MIN_ANGLE_DIFF));
-        *stepsDiffVector = 0;
+    if (abs(*pulsesDiffVector) < convertAngleToPulses(MIN_ANGLE_DIFF)) {
+        //ESP_LOGI(TAG, "Apply high-pass filter: %d pulses is below threshold %d, setting to 0", *pulsesDiffVector, convertAngleToPulses(MIN_ANGLE_DIFF));
+        *pulsesDiffVector = 0;
     }
 }
 
 /**
- * @brief Generate a single step pulse on the motor.
+ * @brief Generate a single pulse to advance motor by one microstep.
  *
- * Produces a 2-microsecond high pulse on the STEP pin to trigger one motor step.
+ * Produces a 2-microsecond high pulse on the STEP pin to trigger one microstep.
  * A4988 minimum pulse width is 1 microsecond.
  */
 static void stepMotor(int delayUs) {
-    gpio_set_level(PIN_STEP, 1);    // Motor steps on rising edge
+    gpio_set_level(PIN_STEP, 1);    // Motor advances one microstep on rising edge
     esp_rom_delay_us(2);            // Minimum pulse width for A4988 is 1µs, 2µs is safe
     gpio_set_level(PIN_STEP, 0);
-    esp_rom_delay_us(delayUs);      // Delay between steps controls speed
+    esp_rom_delay_us(delayUs);      // Delay between pulses controls speed
 }
 
 /**
@@ -228,12 +233,6 @@ void toggleDirection(void) {
  */
 void setDirection(int direction) {
     currentDir = direction;
-    if (direction == DIR_CLOCKWISE) {
-        ESP_LOGI(TAG, "Set direction: CLOCKWISE");
-    }
-    else {
-        ESP_LOGI(TAG, "Set direction: COUNTERCLOCKWISE");
-    }
     gpio_set_level(PIN_DIR, direction);
 }
 
@@ -246,40 +245,38 @@ int getDirection() {
 }
 
 
-void moveSteps(int steps) {
-    //ESP_LOGI(TAG, "Move %d steps", steps);
-    for (int step = 0; step <= steps; step++ ) {
+void movePulses(int pulses) {
+    //ESP_LOGI(TAG, "Move %d pulses", pulses);
+    for (int pulse = 0; pulse < pulses; pulse++ ) {
         stepMotor(START_DELAY_US);
-        
-        // Yield to other tasks every 100 steps to prevent watchdog timeout
-        /*
-        if (step % 100 == 0) {
-            //ESP_LOGI(TAG, "vTaskDelay after %d steps", step);
-            vTaskDelay(1);  // Delay 1 tick (~10ms) to let IDLE task run
-        }
-        */
+    }
+    if (currentDir == DIR_CLOCKWISE) {
+        currentPanPulses += pulses;
+        ESP_LOGI(TAG, "Pan CW   %d pulses  %.1f degrees", pulses, convertPulsesToAngle(currentPanPulses));
+    }
+    else {
+        currentPanPulses -= pulses;
+        ESP_LOGI(TAG, "Pan C-CW %d pulses  %.1f degrees", pulses, convertPulsesToAngle(currentPanPulses));
     }
 }
 
 void panToAngle(float targetAngleFromCentre) {
     // pan to a target angle relative to the midpoint (0 degrees) in the closest direction
     panDeadbandFilter(&targetAngleFromCentre);
-    int targetPanSteps = mapDegreesToSteps(targetAngleFromCentre);
-    int stepsDiffVector = currentPanSteps - targetPanSteps;
-    panHighPassFilter(&stepsDiffVector);
-    //ESP_LOGI(TAG, "currentPanSteps: %d, targetPanSteps: %d, stepsDiffVector: %d", currentPanSteps, targetPanSteps, stepsDiffVector);
+    int targetPanPulses = mapDegreesToPulses(targetAngleFromCentre);
+    int pulsesDiffVector = currentPanPulses - targetPanPulses;
+    panHighPassFilter(&pulsesDiffVector);
+    //ESP_LOGI(TAG, "currentPanPulses: %d, targetPanPulses: %d, pulsesDiffVector: %d", currentPanPulses, targetPanPulses, pulsesDiffVector);
 
-    if (targetPanSteps < currentPanSteps) {
+    if (targetPanPulses < currentPanPulses) {
         setDirection(DIR_COUNTERCLOCKWISE);
-        moveSteps(abs(stepsDiffVector));
-        currentPanSteps -= abs(stepsDiffVector);
-        ESP_LOGI(TAG, "[C-CW] Moved to %.2f degrees (steps: %d)", convertStepsToAngle(currentPanSteps), currentPanSteps);
+        movePulses(abs(pulsesDiffVector));
+        //ESP_LOGI(TAG, "[C-CW] Pan %d pulses to %.1f degrees", abs(pulsesDiffVector), convertPulsesToAngle(currentPanPulses));
     }
-    else if (targetPanSteps > currentPanSteps){
+    else if (targetPanPulses > currentPanPulses){
         setDirection(DIR_CLOCKWISE);
-        moveSteps(abs(stepsDiffVector));
-        currentPanSteps += abs(stepsDiffVector);
-        ESP_LOGI(TAG, "[CW] Moved to %.2f degrees (steps: %d)", convertStepsToAngle(currentPanSteps), currentPanSteps);
+        movePulses(abs(pulsesDiffVector));
+        //ESP_LOGI(TAG, "[CW] Pan %d pulses to %.1f degrees", abs(pulsesDiffVector), convertPulsesToAngle(currentPanPulses));
     }
     else {
         //  no movement needed
@@ -292,5 +289,5 @@ void resetPosition() {
     gpio_set_level(RESET_PAN_PIN, 0); // Assert reset to move to start position
     esp_rom_delay_us(1000000); // Hold reset for 1 second
     gpio_set_level(RESET_PAN_PIN, 1); // Release reset
-    currentPanSteps = 0; // Reset current angle tracking
+    currentPanPulses = 0; // Reset current position tracking
 }

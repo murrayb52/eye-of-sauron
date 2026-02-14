@@ -45,10 +45,9 @@ void motorOperate(void);
  * @param[in] speed Speed level (1=slow, 2=medium, 3=fast) for the rotation.
  */
 void panToAngle(float angle);
-void panToAngle(float targetAngleRel);
 void setDirection(int clockwise);
 void toggleDirection(void);
-void moveSteps(int steps);
+void movePulses(int pulses);
 
 #ifdef __cplusplus
 }
